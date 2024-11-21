@@ -167,7 +167,7 @@ const updateUserProfile = async (req, res, next) => {
   let session = null;
   try {
 
-      const session = await Review.startSession();
+       session = await Review.startSession();
 
       // get comment, rating from request.body:
       const { comment, rating } = req.body;
@@ -180,7 +180,7 @@ const updateUserProfile = async (req, res, next) => {
       const ObjectId = require("mongodb").ObjectId;
       let reviewId = ObjectId();
 
-      session.startTransaction();
+      session.startTransaction(); 
       await Review.create([
           {
               _id: reviewId,

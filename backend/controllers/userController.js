@@ -164,62 +164,86 @@ const updateUserProfile = async (req, res, next) => {
  }  
 
  const writeReview = async (req, res, next) => {
-  let session = null;
+  let session = null; // Initialize session outside try block
   try {
+    // Start a session
+    session = await Review.startSession();
 
-       session = await Review.startSession();
+    // Start a transaction
+    session.startTransaction();
 
-      // get comment, rating from request.body:
-      const { comment, rating } = req.body;
-      // validate request:
-      if (!(comment && rating)) {
-          return res.status(400).send("All inputs are required");
-      }
+    // Get comment and rating from the request
+    const { comment, rating } = req.body;
 
-      // create review id manually because it is needed also for saving in Product collection
-      const ObjectId = require("mongodb").ObjectId;
-      let reviewId = ObjectId();
+    // Validate input
+    if (!(comment && rating)) {
+      return res.status(400).send("All inputs are required");
+    }
 
-      session.startTransaction(); 
-      await Review.create([
-          {
-              _id: reviewId,
-              comment: comment,
-              rating: Number(rating),
-              user: { _id: req.user._id, name: req.user.name + " " + req.user.lastName },
-          }
-      ],{ session: session })
+    // Generate a manual review ID
+    const ObjectId = require("mongodb").ObjectId;
+    let reviewId = ObjectId();
 
-      const product = await Product.findById(req.params.productId).populate("reviews").session(session);
-      
-      const alreadyReviewed = product.reviews.find((r) => r.user._id.toString() === req.user._id.toString());
-      if (alreadyReviewed) {
-          await session.abortTransaction();
-          session.endSession();
-          return res.status(400).send("product already reviewed");
-      }
+    // Create the review
+    await Review.create(
+      [
+        {
+          _id: reviewId,
+          comment: comment,
+          rating: Number(rating),
+          user: { _id: req.user._id, name: req.user.name + " " + req.user.lastName },
+        },
+      ],
+      { session: session } // Associate session with the operation
+    );
 
-      let prc = [...product.reviews];
-      prc.push({ rating: rating });
-      product.reviews.push(reviewId);
-      if (product.reviews.length === 1) {
-          product.rating = Number(rating);
-          product.reviewsNumber = 1;
-      } else {
-          product.reviewsNumber = product.reviews.length;
-          let ratingCalc = prc.map((item) => Number(item.rating)).reduce((sum, item) => sum + item, 0) / product.reviews.length;
-          product.rating = Math.round(ratingCalc)
-      }
-      await product.save();
+    // Find the product
+    const product = await Product.findById(req.params.productId)
+      .populate("reviews")
+      .session(session); // Use session in query
 
-      await session.commitTransaction();
-      session.endSession();
-      res.send('review created')
+    // Check if the product has already been reviewed by this user
+    const alreadyReviewed = product.reviews.find(
+      (r) => r.user._id.toString() === req.user._id.toString()
+    );
+    if (alreadyReviewed) {
+      throw new Error("product already reviewed");
+    }
+
+    // Update product reviews and ratings
+    let prc = [...product.reviews];
+    prc.push({ rating: rating });
+    product.reviews.push(reviewId);
+    if (product.reviews.length === 1) {
+      product.rating = Number(rating);
+      product.reviewsNumber = 1;
+    } else {
+      product.reviewsNumber = product.reviews.length;
+      let ratingCalc =
+        prc
+          .map((item) => Number(item.rating))
+          .reduce((sum, item) => sum + item, 0) / product.reviews.length;
+      product.rating = Math.round(ratingCalc);
+    }
+    await product.save({ session });
+
+    // Commit the transaction
+    await session.commitTransaction();
+    res.send("review created");
   } catch (err) {
+    if (session && session.inTransaction()) {
+      // Abort the transaction only if it was started
       await session.abortTransaction();
-      next(err)   
+    }
+    next(err);
+  } finally {
+    if (session) {
+      // Ensure the session is ended
+      session.endSession();
+    }
   }
-}
+};
+
 
   
 const getUser = async (req, res, next) => {

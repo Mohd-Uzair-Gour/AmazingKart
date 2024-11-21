@@ -164,6 +164,7 @@ const updateUserProfile = async (req, res, next) => {
  }  
 
  const writeReview = async (req, res, next) => {
+  let session = null;
   try {
 
       const session = await Review.startSession();

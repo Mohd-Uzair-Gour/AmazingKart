@@ -182,7 +182,7 @@ const updateUserProfile = async (req, res, next) => {
 
     // Generate a manual review ID
     const ObjectId = require("mongodb").ObjectId;
-    let reviewId = ObjectId();
+    let reviewId = new ObjectId();
 
     // Create the review
     await Review.create(
